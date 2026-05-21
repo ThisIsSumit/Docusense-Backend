@@ -30,7 +30,23 @@ export class SearchController {
     const userId = req.user!.sub;
 
     const raw = await vectorSearch(q, userId, { limit, documentId, minSimilarity });
-    const results = rerankResults(raw, q);
+    const results = raw.length > 0 ? rerankResults(raw, q) : await this._searchTextFallback({
+      query: q,
+      userId,
+      documentId,
+      limit,
+    });
+
+    logger.debug(
+      {
+        userId,
+        documentId,
+        query: q,
+        vectorCount: raw.length,
+        resultCount: results.length,
+      },
+      'Search completed',
+    );
 
     sendSuccess(res, {
       query: q,
@@ -337,6 +353,121 @@ export class SearchController {
     });
 
     return true;
+  }
+
+  private async _searchTextFallback(params: {
+    query: string;
+    userId: string;
+    documentId?: string;
+    limit: number;
+  }) {
+    const { query, userId, documentId, limit } = params;
+    const queryTerms = query
+      .toLowerCase()
+      .split(/\s+/)
+      .map((term) => term.trim())
+      .filter((term) => term.length >= 3);
+
+    const documentWhere: any = {
+      userId,
+      ...(documentId && { id: documentId }),
+      OR: [
+        { title: { contains: query, mode: 'insensitive' as const } },
+        { summary: { contains: query, mode: 'insensitive' as const } },
+        { fileName: { contains: query, mode: 'insensitive' as const } },
+        { tags: { has: query } },
+        ...queryTerms.flatMap((term) => [
+          { title: { contains: term, mode: 'insensitive' as const } },
+          { summary: { contains: term, mode: 'insensitive' as const } },
+          { fileName: { contains: term, mode: 'insensitive' as const } },
+          { tags: { has: term } },
+        ]),
+      ],
+    } as const;
+
+    const [documents, contentMatches] = await Promise.all([
+      prisma.document.findMany({
+        where: documentWhere,
+        select: {
+          id: true,
+          title: true,
+        },
+      }),
+      prisma.chunk.findMany({
+        where: {
+          content: {
+            contains: query,
+            mode: 'insensitive',
+          },
+          document: {
+            userId,
+            ...(documentId && { id: documentId }),
+          },
+        },
+        select: {
+          id: true,
+          content: true,
+          pageNumber: true,
+          chunkIndex: true,
+          documentId: true,
+          document: {
+            select: {
+              title: true,
+            },
+          },
+        },
+        take: limit,
+      }),
+    ]);
+
+    const documentIds = documents.map((doc) => doc.id);
+    const documentTitles = new Map(documents.map((doc) => [doc.id, doc.title]));
+
+    const documentChunks = documentIds.length
+      ? await prisma.chunk.findMany({
+          where: {
+            documentId: { in: documentIds },
+          },
+          orderBy: { chunkIndex: 'asc' },
+          select: {
+            id: true,
+            documentId: true,
+            content: true,
+            pageNumber: true,
+            chunkIndex: true,
+          },
+          take: Math.max(limit, 8),
+        })
+      : [];
+
+    const mappedFromDocs = documentChunks.map((chunk) => ({
+      chunkId: chunk.id,
+      documentId: chunk.documentId,
+      documentTitle: documentTitles.get(chunk.documentId) ?? '',
+      userId,
+      content: chunk.content,
+      pageNumber: chunk.pageNumber,
+      similarity: 0.95,
+    }));
+
+    const mappedFromContent = contentMatches.map((chunk) => ({
+      chunkId: chunk.id,
+      documentId: chunk.documentId,
+      documentTitle: chunk.document.title,
+      userId,
+      content: chunk.content,
+      pageNumber: chunk.pageNumber,
+      similarity: 0.9,
+    }));
+
+    const deduped = new Map<string, (typeof mappedFromDocs)[number]>();
+    [...mappedFromContent, ...mappedFromDocs].forEach((item) => {
+      if (!deduped.has(item.chunkId)) {
+        deduped.set(item.chunkId, item);
+      }
+    });
+
+    return rerankResults(Array.from(deduped.values()), query).slice(0, limit);
   }
 }
 
