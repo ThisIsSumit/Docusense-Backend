@@ -94,7 +94,8 @@ export class DocumentsController {
     }
     const result = await documentsService.uploadDocument(req.user!.sub, req.file);
     // If client requested to wait for processing, poll job status and return final document
-    const wait = String(req.query.wait || '').toLowerCase() === 'true';
+    const waitValue = req.query.wait;
+    const wait = typeof waitValue === 'string' && waitValue.toLowerCase() === 'true';
     if (wait) {
       const { waitForJobCompletion } = await import('../../shared/utils/queue');
       const status = await waitForJobCompletion(result.jobId, 30000, 1000);
@@ -149,6 +150,33 @@ export class DocumentsController {
     const doc = await documentsService.getDocument(req.params.id, req.user!.sub);
     logDocumentResponse('documents.getById.response', doc);
     sendSuccess(res, doc);
+  }
+
+  async download(req: Request, res: Response): Promise<void> {
+    logger.debug(
+      {
+        action: 'documents.download.request',
+        userId: req.user?.sub,
+        documentId: req.params.id,
+      },
+      'Documents request received',
+    );
+
+    const { fileName, mimeType, stream } = await documentsService.getDocumentDownload(
+      req.params.id,
+      req.user!.sub,
+    );
+
+    logDocumentResponse('documents.download.response', {
+      documentId: req.params.id,
+      fileName,
+      mimeType,
+    });
+
+    res.setHeader('Content-Type', mimeType);
+    res.attachment(fileName);
+    const fileStream = await Promise.resolve(stream);
+    fileStream.pipe(res);
   }
 
   async update(req: Request, res: Response): Promise<void> {

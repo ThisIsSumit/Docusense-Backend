@@ -28,6 +28,7 @@ router.get('/', (req, res) => documentsController.list(req, res));
 router.get('/jobs/:jobId/status', (req, res) => documentsController.getJobStatus(req, res));
 
 // Dynamic /:id routes
+router.get('/:id/download', (req, res) => documentsController.download(req, res));
 router.get('/:id', (req, res) => documentsController.getById(req, res));
 router.patch('/:id', (req, res) => documentsController.update(req, res));
 router.delete('/:id', (req, res) => documentsController.delete(req, res));

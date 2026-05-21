@@ -1,7 +1,7 @@
 import { prisma } from '../../config/database';
 import { storageService } from '../../shared/utils/storage.service';
 import { enqueueIngest } from '../../shared/utils/queue';
-import { NotFoundError, ForbiddenError, buildPaginatedResult, paginate } from '../../shared/types/api.types';
+import { NotFoundError, ForbiddenError, paginate } from '../../shared/types/api.types';
 import { logger } from '../../shared/utils/logger';
 
 const SUPPORTED_TYPES = [
@@ -196,6 +196,31 @@ export class DocumentsService {
     return {
       ...mapDocumentResponse(doc),
       chunkCount: doc._count.chunks,
+    };
+  }
+
+  async getDocumentDownload(documentId: string, userId: string) {
+    const doc = await prisma.document.findUnique({
+      where: { id: documentId },
+      select: {
+        id: true,
+        userId: true,
+        title: true,
+        fileName: true,
+        mimeType: true,
+        storageKey: true,
+      },
+    });
+
+    if (!doc) throw new NotFoundError('Document');
+    if (doc.userId !== userId) throw new ForbiddenError();
+
+    return {
+      id: doc.id,
+      title: doc.title,
+      fileName: doc.fileName,
+      mimeType: doc.mimeType,
+      stream: storageService.getStream(doc.storageKey),
     };
   }
 
