@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { vectorSearch, rerankResults } from '../../shared/utils/embeddings.service';
 import { generateAnswerStream, generateAnswer } from '../../shared/utils/ai.service';
 import { prisma } from '../../config/database';
-import { sendSuccess, sendError, AppError } from '../../shared/types/api.types';
+import { sendSuccess, sendError } from '../../shared/types/api.types';
 import { logger } from '../../shared/utils/logger';
 
 // ── Schemas ───────────────────────────────────────────────────────────────────
@@ -45,6 +45,16 @@ export class SearchController {
     const userId = req.user!.sub;
     const startMs = Date.now();
 
+    logger.debug(
+      {
+        userId,
+        documentId,
+        stream,
+        questionPreview: question.slice(0, 200),
+      },
+      'Received search query request',
+    );
+
     // Retrieve chunks
     const raw = await vectorSearch(question, userId, {
       limit: 8,
@@ -52,7 +62,29 @@ export class SearchController {
       minSimilarity: 0.25,
     });
 
+    logger.debug(
+      {
+        userId,
+        documentId,
+        rawCount: raw.length,
+      },
+      'Vector search completed',
+    );
+
     if (raw.length === 0) {
+      const handled = await this._tryDocumentFallback({
+        userId,
+        question,
+        documentId,
+        stream,
+        res,
+        startMs,
+      });
+
+      if (handled) {
+        return;
+      }
+
       if (stream) {
         res.setHeader('Content-Type', 'text/event-stream');
         res.write(`data: ${JSON.stringify({ type: 'error', message: 'No relevant content found' })}\n\n`);
@@ -202,6 +234,109 @@ export class SearchController {
     } catch (err) {
       logger.error({ err }, 'Failed to persist query');
     }
+  }
+
+  private async _tryDocumentFallback(params: {
+    userId: string;
+    question: string;
+    documentId?: string;
+    stream: boolean;
+    res: Response;
+    startMs: number;
+  }): Promise<boolean> {
+    const { userId, question, documentId, stream, res, startMs } = params;
+
+    if (!documentId) {
+      return false;
+    }
+
+    const doc = await prisma.document.findFirst({
+      where: { id: documentId, userId },
+      select: { id: true, title: true },
+    });
+
+    if (!doc) {
+      return false;
+    }
+
+    const directChunks = await prisma.chunk.findMany({
+      where: { documentId: doc.id },
+      orderBy: { chunkIndex: 'asc' },
+      select: {
+        id: true,
+        documentId: true,
+        content: true,
+        pageNumber: true,
+        chunkIndex: true,
+      },
+      take: 8,
+    });
+
+    if (directChunks.length === 0) {
+      return false;
+    }
+
+    logger.debug(
+      {
+        userId,
+        documentId,
+        directChunkCount: directChunks.length,
+      },
+      'Using direct document chunks as fallback context',
+    );
+
+    const chunks = rerankResults(
+      directChunks.map((c) => ({
+        chunkId: c.id,
+        documentId: c.documentId,
+        documentTitle: doc.title,
+        userId,
+        content: c.content,
+        pageNumber: c.pageNumber,
+        similarity: 1,
+      })),
+      question,
+    );
+
+    const aiChunks = chunks.map((c) => ({
+      chunkId: c.chunkId,
+      content: c.content,
+      documentId: c.documentId,
+      documentTitle: c.documentTitle,
+      pageNumber: c.pageNumber,
+      similarity: c.similarity,
+    }));
+
+    if (stream) {
+      const answer = await generateAnswerStream(question, aiChunks, res, doc.title);
+      void this._persistQuery(userId, question, answer, documentId, chunks, startMs);
+      return true;
+    }
+
+    const { answer, tokensUsed } = await generateAnswer(question, aiChunks, doc.title);
+    const latencyMs = Date.now() - startMs;
+    await this._persistQuery(userId, question, answer, documentId, chunks, startMs);
+
+    sendSuccess(res, {
+      question,
+      answer,
+      sources: chunks.map((c) => ({
+        chunkId: c.chunkId,
+        documentId: c.documentId,
+        documentTitle: c.documentTitle,
+        pageNumber: c.pageNumber,
+        similarity: c.similarity,
+        excerpt: c.content.slice(0, 200) + (c.content.length > 200 ? '...' : ''),
+      })),
+      meta: {
+        tokensUsed,
+        latencyMs,
+        chunksSearched: chunks.length,
+        retrievalMode: 'direct-document-fallback',
+      },
+    });
+
+    return true;
   }
 }
 

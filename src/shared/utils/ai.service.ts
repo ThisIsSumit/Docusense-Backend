@@ -168,6 +168,10 @@ export async function extractDocumentStructure(
     ],
   });
 
+  // Debug: print request prompt and raw AI response for inspection
+  console.log('AI extractDocumentStructure request:', { fileName, promptLength: prompt.length });
+  console.log('AI extractDocumentStructure response preview:', response?.text?.slice?.(0, 1000) ?? response);
+
   const text = response.text;
   if (!text) {
     throw new Error('AI failed to extract document structure');
@@ -262,6 +266,14 @@ ${documentTitle ? `The user is asking about: ${documentTitle}` : ''}`;
   const userMessage = `Context:\n${context}\n\nQuestion: ${question}`;
 
   // Set SSE headers
+  // Debug: print the incoming question, document title and context size
+  console.log('AI generateAnswerStream request:', {
+    question: question?.slice?.(0, 500) ?? question,
+    documentTitle,
+    sources: chunks.length,
+    contextPreview: context.slice?.(0, 500),
+  });
+
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -300,12 +312,18 @@ ${documentTitle ? `The user is asking about: ${documentTitle}` : ''}`;
       const text = event.text;
       if (text) {
       fullAnswer += text;
+      // Debug: print each incremental chunk received from the AI provider
+      console.log('AI generateAnswerStream delta:', text.replace(/\n/g, '\\n'));
       res.write(`data: ${JSON.stringify({ type: 'delta', text })}\n\n`);
     }
   }
 
   res.write(`data: ${JSON.stringify({ type: 'done', totalTokens: fullAnswer.length })}\n\n`);
   res.end();
+
+  // Debug: print the full assembled answer
+  console.log('AI generateAnswerStream fullAnswer length:', fullAnswer.length);
+  console.log('AI generateAnswerStream fullAnswer preview:', fullAnswer.slice(0, 1000));
 
   return fullAnswer;
 }
@@ -337,6 +355,14 @@ export async function generateAnswer(
   });
 
   const answer = response.text ?? '';
+
+  // Debug: print non-streaming request and response for inspection
+  console.log('AI generateAnswer request:', {
+    question: question?.slice?.(0, 300) ?? question,
+    documentTitle,
+    sources: chunks.length,
+  });
+  console.log('AI generateAnswer response preview:', answer.slice(0, 1000));
 
   return { answer, tokensUsed: answer.length };
 }
