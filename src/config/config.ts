@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import dotenv from 'dotenv';
 
-dotenv.config();
+dotenv.config({ override: true });
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
@@ -27,6 +27,9 @@ const envSchema = z.object({
   AWS_SECRET_ACCESS_KEY: z.string().optional(),
   AWS_REGION: z.string().default('us-east-1'),
   AWS_S3_BUCKET: z.string().optional(),
+  SUPABASE_URL: z.string().url().optional(),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
+  SUPABASE_STORAGE_BUCKET: z.string().default('documents'),
 
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(900000),
   RATE_LIMIT_MAX: z.coerce.number().default(100),
@@ -46,6 +49,19 @@ function validateEnv() {
     });
     process.exit(1);
   }
+
+  if (result.data.STORAGE_PROVIDER === 'supabase') {
+    const missing: string[] = [];
+    if (!result.data.SUPABASE_URL) missing.push('SUPABASE_URL');
+    if (!result.data.SUPABASE_SERVICE_ROLE_KEY) missing.push('SUPABASE_SERVICE_ROLE_KEY');
+
+    if (missing.length > 0) {
+      console.error('❌ Missing Supabase storage environment variables:');
+      missing.forEach((name) => console.error(`  ${name}`));
+      process.exit(1);
+    }
+  }
+
   return result.data;
 }
 

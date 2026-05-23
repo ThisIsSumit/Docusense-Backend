@@ -1,0 +1,95 @@
+services:
+  - type: web
+    name: docusense-api
+    runtime: docker
+    plan: starter
+    dockerContext: .
+    dockerfilePath: Dockerfile
+    preDeployCommand: npx prisma migrate deploy
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: STORAGE_PROVIDER
+        value: supabase
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: documents
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        value: openai/text-embedding-3-small
+      - key: OPENROUTER_CHAT_MODEL
+        value: gpt-4o-mini
+      - key: VOYAGE_API_KEY
+        sync: false
+      - key: RATE_LIMIT_WINDOW_MS
+        value: "900000"
+      - key: RATE_LIMIT_MAX
+        value: "100"
+      - key: RATE_LIMIT_AUTH_MAX
+        value: "10"
+      - key: QUEUE_CONCURRENCY
+        value: "1"
+
+  - type: worker
+    name: docusense-worker
+    runtime: docker
+    plan: starter
+    dockerContext: .
+    dockerfilePath: Dockerfile
+    dockerCommand: node dist/jobs/worker.js
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: STORAGE_PROVIDER
+        value: supabase
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: documents
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        value: openai/text-embedding-3-small
+      - key: OPENROUTER_CHAT_MODEL
+        value: gpt-4o-mini
+      - key: VOYAGE_API_KEY
+        sync: false
+      - key: RATE_LIMIT_WINDOW_MS
+        value: "900000"
+      - key: RATE_LIMIT_MAX
+        value: "100"
+      - key: RATE_LIMIT_AUTH_MAX
+        value: "10"
+      - key: QUEUE_CONCURRENCY
+        value: "1"

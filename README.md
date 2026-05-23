@@ -100,6 +100,29 @@ docker compose up -d
 # Starts pgvector/postgres:16 + redis:7
 ```
 
+### Render + Supabase deployment
+Use this when you want hosted storage and a managed deployment platform:
+
+1. Create a Supabase project.
+2. Create a private Storage bucket, for example `documents`.
+3. Copy `SUPABASE_URL` and the service role key into your Render env vars.
+4. Set `STORAGE_PROVIDER=supabase`.
+5. Connect this repo to Render and deploy with `render.yaml`.
+6. Use Supabase Postgres and an external Redis provider such as Upstash.
+
+Required Render env vars:
+```bash
+DATABASE_URL=...                 # Supabase Postgres
+REDIS_URL=...                    # Upstash or Render Redis
+JWT_ACCESS_SECRET=...
+JWT_REFRESH_SECRET=...
+SUPABASE_URL=...
+SUPABASE_SERVICE_ROLE_KEY=...
+SUPABASE_STORAGE_BUCKET=documents
+STORAGE_PROVIDER=supabase
+CORS_ORIGINS=https://your-frontend-url
+```
+
 ### 5. Database setup
 ```bash
 npm run db:migrate    # Run Prisma migrations

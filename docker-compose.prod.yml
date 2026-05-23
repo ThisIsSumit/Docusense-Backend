@@ -1,0 +1,45 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: docusense_api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      STORAGE_PROVIDER: local
+      STORAGE_LOCAL_PATH: /app/uploads
+    ports:
+      - '3000:3000'
+    volumes:
+      - uploads_data:/app/uploads
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:3000/health >/dev/null 2>&1 || exit 1']
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: docusense_worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      STORAGE_PROVIDER: local
+      STORAGE_LOCAL_PATH: /app/uploads
+    command: ['node', 'dist/jobs/worker.js']
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  uploads_data:
