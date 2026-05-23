@@ -1,10 +1,52 @@
+import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import fs from 'node:fs';
+import path from 'node:path';
+import { Client } from 'pg';
+
+dotenv.config({ override: true });
 
 const prisma = new PrismaClient();
 
+async function ensureSchema() {
+  try {
+    await prisma.user.findFirst({ select: { id: true } });
+    return;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.includes('public.users')) {
+      throw error;
+    }
+  }
+
+  console.log('⚠️  Database schema missing; applying initial migration...');
+  const migrationPath = path.join(
+    process.cwd(),
+    'prisma',
+    'migrations',
+    '20260407152835_docusense_copy',
+    'migration.sql',
+  );
+  const migrationSql = fs.readFileSync(migrationPath, 'utf8');
+
+  const client = new Client({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.DATABASE_URL?.includes('sslmode=require') ? { rejectUnauthorized: false } : undefined,
+  });
+
+  await client.connect();
+  try {
+    await client.query(migrationSql);
+  } finally {
+    await client.end();
+  }
+}
+
 async function main() {
   console.log('🌱 Seeding database...');
+
+  await ensureSchema();
 
   // Demo user
   const hash = await bcrypt.hash('password123', 12);
