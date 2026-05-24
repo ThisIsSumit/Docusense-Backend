@@ -1,12 +1,12 @@
 import 'express-async-errors';
 import { Worker, Job } from 'bullmq';
-import fs from 'node:fs';
-import path from 'node:path';
+import { Readable } from 'node:stream';
 import { parsePdf } from '../shared/utils/pdf-parse-wrapper';
 import { getRedis } from '../config/redis';
 import { connectDB, disconnectDB, prisma } from '../config/database';
 import { config } from '../config/config';
 import { logger } from '../shared/utils/logger';
+import { storageService } from '../shared/utils/storage.service';
 import {
   QUEUE_NAMES,
   IngestJobData,
@@ -25,17 +25,20 @@ async function extractText(
   storageKey: string,
   mimeType: string,
 ): Promise<string> {
-  const filePath = path.join(
-    path.resolve(config.STORAGE_LOCAL_PATH),
-    storageKey,
-  );
+  const stream = await storageService.getStream(storageKey);
+  const chunks: Buffer[] = [];
 
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`File not found at ${filePath}`);
+  for await (const chunk of stream as AsyncIterable<Buffer | string>) {
+    if (Buffer.isBuffer(chunk)) {
+      chunks.push(chunk);
+    } else {
+      chunks.push(Buffer.from(chunk));
+    }
   }
 
-  logger.debug({ storageKey, mimeType, filePath }, 'Extracting document text');
-  const buffer = fs.readFileSync(filePath);
+  const buffer = Buffer.concat(chunks);
+
+  logger.debug({ storageKey, mimeType, sizeBytes: buffer.length }, 'Extracting document text');
 
   if (mimeType === 'text/plain') {
     const text = buffer.toString('utf-8');
