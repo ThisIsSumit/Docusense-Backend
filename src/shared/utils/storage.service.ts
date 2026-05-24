@@ -14,7 +14,7 @@ export interface StoredFile {
 }
 
 export interface StorageProvider {
-  save(file: Express.Multer.File, folder: string): Promise<StoredFile>;
+  save(file: Express.Multer.File, folder: string, key?: string, overwrite?: boolean): Promise<StoredFile>;
   delete(key: string): Promise<void>;
   getUrl(key: string): string;
   getStream(key: string): fs.ReadStream | Promise<NodeJS.ReadableStream>;
@@ -32,16 +32,16 @@ class LocalStorageProvider implements StorageProvider {
     }
   }
 
-  async save(file: Express.Multer.File, folder: string): Promise<StoredFile> {
+  async save(file: Express.Multer.File, folder: string, key?: string, overwrite = false): Promise<StoredFile> {
     const dir = path.join(this.basePath, folder);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-    const key = `${folder}/${Date.now()}-${file.originalname.replace(/\s+/g, '_')}`;
-    const dest = path.join(this.basePath, key);
+    const storageKey = key ?? `${folder}/${Date.now()}-${file.originalname.replace(/\s+/g, '_')}`;
+    const dest = path.join(this.basePath, storageKey);
 
     if (file.path) {
       const relativePath = path.relative(this.basePath, file.path);
-      if (!relativePath.startsWith('..') && !path.isAbsolute(relativePath)) {
+      if (!relativePath.startsWith('..') && !path.isAbsolute(relativePath) && !key) {
         return {
           key: relativePath.split(path.sep).join('/'),
           url: `/files/${relativePath.split(path.sep).join('/')}`,
@@ -50,17 +50,27 @@ class LocalStorageProvider implements StorageProvider {
         };
       }
 
+      if (overwrite && fs.existsSync(dest)) {
+        fs.unlinkSync(dest);
+      }
+
       fs.copyFileSync(file.path, dest);
-      fs.unlinkSync(file.path);
+      if (file.path !== dest) {
+        fs.unlinkSync(file.path);
+      }
     } else if (file.buffer) {
+      if (overwrite && fs.existsSync(dest)) {
+        fs.unlinkSync(dest);
+      }
+
       fs.writeFileSync(dest, file.buffer);
     } else {
       throw new AppError('Uploaded file has no buffer or path', 400, 'INVALID_FILE');
     }
 
     return {
-      key,
-      url: `/files/${key}`,
+      key: storageKey,
+      url: `/files/${storageKey}`,
       sizeBytes: file.size,
       mimeType: file.mimetype,
     };
@@ -113,8 +123,8 @@ class SupabaseStorageProvider implements StorageProvider {
     return `${folder}/${Date.now()}-${file.originalname.replace(/\s+/g, '_')}`;
   }
 
-  async save(file: Express.Multer.File, folder: string): Promise<StoredFile> {
-    const key = this.buildKey(file, folder);
+  async save(file: Express.Multer.File, folder: string, key?: string, overwrite = false): Promise<StoredFile> {
+    const storageKey = key ?? this.buildKey(file, folder);
     const filePath = file.path ? path.resolve(file.path) : null;
 
     try {
@@ -129,9 +139,9 @@ class SupabaseStorageProvider implements StorageProvider {
         throw new AppError('Uploaded file has no buffer or path', 400, 'INVALID_FILE');
       }
 
-      const { error } = await this.client.storage.from(this.bucket).upload(key, body, {
+      const { error } = await this.client.storage.from(this.bucket).upload(storageKey, body, {
         contentType: file.mimetype,
-        upsert: false,
+        upsert: overwrite,
       });
 
       if (error) {
@@ -139,8 +149,8 @@ class SupabaseStorageProvider implements StorageProvider {
       }
 
       return {
-        key,
-        url: this.getUrl(key),
+        key: storageKey,
+        url: this.getUrl(storageKey),
         sizeBytes: file.size,
         mimeType: file.mimetype,
       };
