@@ -12,6 +12,8 @@
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
+    "db:requeue": "tsx prisma/requeue-documents.ts",
+    "db:requeue:dry": "tsx prisma/requeue-documents.ts --dry-run",
     "db:studio": "prisma studio",
     "worker": "tsx src/jobs/worker.ts",
     "lint": "eslint src --ext .ts",

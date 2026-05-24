@@ -1,9 +1,8 @@
 import { Response } from 'express';
-import { GoogleGenAI } from '@google/genai';
 import { config } from '../../config/config';
 import { logger } from '../utils/logger';
 
-const MODEL = config.OPENROUTER_CHAT_MODEL ?? 'gpt-4o-mini';
+const MODEL = config.OPENROUTER_CHAT_MODEL ?? 'openai/gpt-4o-mini';
 
 const generationConfig = {};
 
@@ -16,6 +15,29 @@ function contentsToMessages(contents: any[]) {
     role: c.role,
     content: c.parts?.map((p: any) => p.text).join('') ?? '',
   }));
+}
+
+function normalizeOpenRouterContent(content: unknown): string {
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  if (Array.isArray(content)) {
+    const textParts = content
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        if (part && typeof part === 'object' && 'text' in part) {
+          const textValue = (part as { text?: unknown }).text;
+          return typeof textValue === 'string' ? textValue : '';
+        }
+        return '';
+      })
+      .filter(Boolean);
+
+    return textParts.join('\n').trim();
+  }
+
+  return '';
 }
 
 let client: any;
@@ -42,7 +64,7 @@ if (config.OPENROUTER_API_KEY) {
 
         const json: any = await resp.json();
         const choice = json?.choices?.[0] ?? {};
-        const text = choice?.message?.content ?? choice?.text ?? '';
+        const text = normalizeOpenRouterContent(choice?.message?.content) || choice?.text || '';
         return { text };
       },
 

@@ -36,7 +36,7 @@ services:
       - key: OPENROUTER_MODEL
         value: openai/text-embedding-3-small
       - key: OPENROUTER_CHAT_MODEL
-        value: gpt-4o-mini
+        value: openai/gpt-4o-mini
       - key: VOYAGE_API_KEY
         sync: false
       - key: RATE_LIMIT_WINDOW_MS
@@ -82,7 +82,7 @@ services:
       - key: OPENROUTER_MODEL
         value: openai/text-embedding-3-small
       - key: OPENROUTER_CHAT_MODEL
-        value: gpt-4o-mini
+        value: openai/gpt-4o-mini
       - key: VOYAGE_API_KEY
         sync: false
       - key: RATE_LIMIT_WINDOW_MS

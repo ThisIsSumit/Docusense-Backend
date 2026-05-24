@@ -18,7 +18,7 @@ const envSchema = z.object({
   GEMINI_API_KEY: z.string().min(1).optional(),
   OPENROUTER_API_KEY: z.string().optional(),
   OPENROUTER_MODEL: z.string().default('openai/text-embedding-3-small'),
-  OPENROUTER_CHAT_MODEL: z.string().default('gpt-4o-mini'),
+  OPENROUTER_CHAT_MODEL: z.string().default('openai/gpt-4o-mini'),
   VOYAGE_API_KEY: z.string().optional(),
 
   STORAGE_PROVIDER: z.enum(['local', 's3', 'supabase']).default('local'),
