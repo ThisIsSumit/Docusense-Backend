@@ -4,6 +4,7 @@ import { Readable } from 'node:stream';
 import { config } from '../../config/config';
 import { AppError } from '../../shared/types/api.types';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import ws from 'ws';
 
 export interface StoredFile {
   key: string;
@@ -96,6 +97,9 @@ class SupabaseStorageProvider implements StorageProvider {
         auth: {
           persistSession: false,
           autoRefreshToken: false,
+        },
+        realtime: {
+              transport: ws as never,
         },
       },
     );
