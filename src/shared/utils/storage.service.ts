@@ -162,7 +162,8 @@ class SupabaseStorageProvider implements StorageProvider {
   }
 
   async delete(key: string): Promise<void> {
-    const { error } = await this.client.storage.from(this.bucket).remove([key]);
+    const { bucket, innerKey } = this.parseKey(key);
+    const { error } = await this.client.storage.from(bucket).remove([innerKey]);
     if (error) {
       throw new AppError(error.message, 500, 'STORAGE_DELETE_FAILED');
     }
@@ -172,8 +173,54 @@ class SupabaseStorageProvider implements StorageProvider {
     return `supabase://${this.bucket}/${key}`;
   }
 
+  private parseKey(key: string): { bucket: string; innerKey: string } {
+    // Accept multiple key formats:
+    // - plain key: "users/..."
+    // - supabase scheme: "supabase://bucket/path/to/object"
+    // - http(s) public URL: "https://.../object/..."
+    if (!key) return { bucket: this.bucket, innerKey: key };
+
+    // supabase://bucket/key
+    if (key.startsWith('supabase://')) {
+      const rest = key.replace('supabase://', '');
+      const idx = rest.indexOf('/');
+      if (idx === -1) return { bucket: rest, innerKey: '' };
+      const bucket = rest.slice(0, idx);
+      const innerKey = rest.slice(idx + 1);
+      return { bucket, innerKey };
+    }
+
+    // Full URL handling: try to extract bucket and key if it matches Supabase storage url patterns
+    try {
+      const u = new URL(key);
+      // Supabase storage public URL shapes often include '/object/public/{bucket}/{path}' or '/storage/v1/object/public/{bucket}/{path}'
+      const parts = u.pathname.split('/').filter(Boolean);
+      const objIndex = parts.indexOf('object');
+      const storageIndex = parts.indexOf('storage');
+      if (objIndex !== -1) {
+        // e.g. /storage/v1/object/public/{bucket}/{path...}
+        const maybeBucket = parts[objIndex + 2] ?? this.bucket;
+        const innerKey = parts.slice(objIndex + 3).join('/');
+        return { bucket: maybeBucket, innerKey };
+      }
+
+      // Fallback: assume last two segments contain bucket and key
+      if (parts.length >= 2) {
+        const maybeBucket = parts[parts.length - 2];
+        const innerKey = parts[parts.length - 1];
+        return { bucket: maybeBucket, innerKey };
+      }
+    } catch (err) {
+      // not a URL — fall through
+    }
+
+    // Default: use configured bucket and the provided key as innerKey
+    return { bucket: this.bucket, innerKey: key };
+  }
+
   async getStream(key: string): Promise<NodeJS.ReadableStream> {
-    const { data, error } = await this.client.storage.from(this.bucket).download(key);
+    const { bucket, innerKey } = this.parseKey(key);
+    const { data, error } = await this.client.storage.from(bucket).download(innerKey);
     if (error || !data) {
       throw new AppError('File not found', 404, 'NOT_FOUND');
     }

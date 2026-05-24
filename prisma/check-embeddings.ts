@@ -19,6 +19,7 @@ const args = {
   })(),
 };
 
+
 async function main() {
   console.log('Checking for chunks missing embeddings...');
 
