@@ -24,6 +24,8 @@ async function bootstrap() {
       registerSignalHandlers: false,
     });
     logger.info('✓ Inline worker started in API service');
+  } else {
+    logger.warn('Inline worker disabled; queued AI jobs require a separate worker process');
   }
 
   // Start server

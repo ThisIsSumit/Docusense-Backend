@@ -38,7 +38,7 @@ const envSchema = z.object({
   CORS_ORIGINS: z.string().default('http://localhost:3000'),
 
   QUEUE_CONCURRENCY: z.coerce.number().default(1),
-  RUN_WORKER_INLINE: z.coerce.boolean().default(false),
+  RUN_WORKER_INLINE: z.coerce.boolean().optional(),
 });
 
 function validateEnv() {
@@ -63,7 +63,12 @@ function validateEnv() {
     }
   }
 
-  return result.data;
+  return {
+    ...result.data,
+    // For single-service hosts (e.g. Render free plan), run worker inline by default in production.
+    RUN_WORKER_INLINE:
+      result.data.RUN_WORKER_INLINE ?? result.data.NODE_ENV === 'production',
+  };
 }
 
 export const config = validateEnv();
