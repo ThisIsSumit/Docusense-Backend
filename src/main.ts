@@ -3,8 +3,11 @@ import { connectDB, disconnectDB } from './config/database';
 import { getRedis, disconnectRedis } from './config/redis';
 import { config } from './config/config';
 import { logger } from './shared/utils/logger';
+import { startWorkers, WorkerRuntime } from './jobs/worker';
 
 async function bootstrap() {
+  let workerRuntime: WorkerRuntime | null = null;
+
   // Connect dependencies
   logger.info('Connecting to database...');
   await connectDB();
@@ -14,6 +17,14 @@ async function bootstrap() {
   const redis = getRedis();
   await redis.ping();
   logger.info('✓ Redis connected');
+
+  if (config.RUN_WORKER_INLINE) {
+    workerRuntime = await startWorkers({
+      manageDatabaseConnection: false,
+      registerSignalHandlers: false,
+    });
+    logger.info('✓ Inline worker started in API service');
+  }
 
   // Start server
   const app = createApp();
@@ -40,6 +51,9 @@ async function bootstrap() {
     server.close(async () => {
       logger.info('HTTP server closed');
       try {
+        if (workerRuntime) {
+          await workerRuntime.close();
+        }
         await disconnectDB();
         await disconnectRedis();
         logger.info('Connections closed — bye!');

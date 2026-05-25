@@ -38,6 +38,7 @@ const envSchema = z.object({
   CORS_ORIGINS: z.string().default('http://localhost:3000'),
 
   QUEUE_CONCURRENCY: z.coerce.number().default(1),
+  RUN_WORKER_INLINE: z.coerce.boolean().default(false),
 });
 
 function validateEnv() {

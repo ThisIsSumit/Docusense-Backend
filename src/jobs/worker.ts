@@ -19,6 +19,15 @@ import {
 } from '../shared/utils/ai.service';
 import { embedAndStoreChunks } from '../shared/utils/embeddings.service';
 
+type StartWorkerOptions = {
+  manageDatabaseConnection?: boolean;
+  registerSignalHandlers?: boolean;
+};
+
+export type WorkerRuntime = {
+  close: () => Promise<void>;
+};
+
 // ── Text extraction helpers ───────────────────────────────────────────────────
 
 async function extractText(
@@ -251,9 +260,14 @@ async function processEmbedJob(job: Job<EmbedJobData>): Promise<void> {
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 
-async function main() {
-  await connectDB();
-  logger.info('Worker connected to database');
+export async function startWorkers(options: StartWorkerOptions = {}): Promise<WorkerRuntime> {
+  const manageDatabaseConnection = options.manageDatabaseConnection ?? true;
+  const registerSignalHandlers = options.registerSignalHandlers ?? true;
+
+  if (manageDatabaseConnection) {
+    await connectDB();
+    logger.info('Worker connected to database');
+  }
 
   const connection = { connection: getRedis() };
   const concurrency = Math.max(1, Math.min(config.QUEUE_CONCURRENCY, 1));
@@ -286,19 +300,37 @@ async function main() {
     '🚀 Worker started',
   );
 
-  // Graceful shutdown
-  async function shutdown() {
+  async function close() {
     logger.info('Shutting down workers...');
     await Promise.all([ingestWorker.close(), embedWorker.close()]);
-    await disconnectDB();
-    process.exit(0);
+    if (manageDatabaseConnection) {
+      await disconnectDB();
+    }
   }
 
-  process.on('SIGTERM', shutdown);
-  process.on('SIGINT', shutdown);
+  if (registerSignalHandlers) {
+    async function shutdown() {
+      await close();
+      process.exit(0);
+    }
+
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
+  }
+
+  return { close };
 }
 
-main().catch((err) => {
-  logger.error({ err }, 'Worker bootstrap failed');
-  process.exit(1);
-});
+async function main() {
+  await startWorkers({
+    manageDatabaseConnection: true,
+    registerSignalHandlers: true,
+  });
+}
+
+if (require.main === module) {
+  main().catch((err) => {
+    logger.error({ err }, 'Worker bootstrap failed');
+    process.exit(1);
+  });
+}
